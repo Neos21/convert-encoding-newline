@@ -1,0 +1,27 @@
+{
+  "name": "@neos21/convert-encoding-newline",
+  "version": "0.0.0",
+  "description": "Convert Encoding New Line",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./index.js",
+    "test" : "node ./test.js"
+  },
+  "author": "Neo <neos21@gmail.com> (https://neos21.net/)",
+  "license": "MIT",
+  "homepage": "https://github.com/Neos21/convert-encoding-newline#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Neos21/convert-encoding-newline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Neos21/convert-encoding-newline/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Neos21"
+  },
+  "dependencies": {
+    "encoding-japanese": "2.0.0"
+  }
+}
