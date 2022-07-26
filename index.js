@@ -1,72 +1,131 @@
-const fs = require('fs').promises;
+const fs               = require('fs').promises;
+const path             = require('path');
+const { program }      = require('commander');
 const encodingJapanese = require('encoding-japanese');
 
 (async () => {
-  // 現状はココで読み込むファイルや変換形式等を指定する
-  const inputFilePath = './example-input/SJIS-CRLF.txt';
-  const outputEncoding = 'UTF8';
-  const outputNewLine  = 'LF';
-  const outputFilePath = './example-output.txt';
-  
-  // 文字コード・改行コードは未指定時は変換なし・指定時は決められた値のみ許容する
-  if(!isEmptyString(outputEncoding) && !['UTF8', 'UTF8BOM', 'SJIS', 'EUCJP'].includes(outputEncoding)) return console.error('Invalid Output Encoding');
-  if(!isEmptyString(outputNewLine ) && !['LF', 'CR', 'CRLF'                ].includes(outputNewLine )) return console.error('Invalid Output New Line');
-  // 文字コード・改行コードの変換指定がある場合は変換後ファイルパスを必須とする
-  if((!isEmptyString(outputEncoding) || !isEmptyString(outputNewLine)) && isEmptyString(outputFilePath)) return console.error('Output File Path Is Required');
-  
-  // ファイルを読み込む
-  let inputBuffer = null;
   try {
-    inputBuffer = await fs.readFile(`./${inputFilePath}`);
+    program
+      .name('convert-encoding-newline')
+      .description('Convert Encoding And New Line')
+      .requiredOption('-i, --input <file>', 'Input File Path')
+      .option('-e, --encoding <encoding>' , 'Output Encoding', 'UTF8')
+      .option('-l, --new-line <new-line>' , 'Output New Line', 'LF')
+      .option('-o, --output <file>'       , 'Output File Path')
+      .option('-f, --force'               , 'Force Overwrite Output File')  // Output を強制上書きする
+      .option('-q, --quiet'               , 'No Output Converting Logs')    // 変換前後の通常ログを出力しない
+      .parse();
+    const options = program.opts();
+    
+    // Input ファイルの存在チェック
+    if(! await isExistFile(options.input)) throw new Error('Input File Does Not Exist');
+    // Input ファイルの改行コード・文字コードを判定する
+    const { inputEncoding, inputNewLine, inputString } = await detectInput(options.input);  // Throws
+    
+    // `output` オプションがなければ Input ファイルの判定結果を出力して終了する
+    if(!options.output) return console.log(`Input File Encoding : [${inputEncoding}] ... Input File New Line : [${inputNewLine}] ... [${options.input}]`);
+    
+    // 以降変換処理
+    
+    // 上書きしない場合は Output ファイルが既に存在していないかチェックする
+    if(!options.force && await isExistFile(options.output)) throw new Error('Output File Is Already Exist');
+    
+    // オプションを整形する
+    const outputEncoding = detectEncodingOption(options.encoding);
+    const outputNewLine  = detectNewLineOption(options.newLine);
+    // 変換要否を判定する
+    const { isNotNeedToConvert, isSameEncoding, isSameNewLine } = detectNeedToConvert(inputEncoding, inputNewLine, outputEncoding, outputNewLine);
+    if(isNotNeedToConvert) {
+      if(!options.quiet) return console.warn(`Input File : [${inputEncoding}] [${inputNewLine}] ... No Converts Needed`);
+      throw new Error('No Converts Needed');
+    }
+    
+    // 変換する
+    const outputBuffer = convertOutput(inputString, isSameNewLine, outputEncoding, outputNewLine);
+    
+    // ファイルに書き出す : ディレクトリが存在しない場合のために作成する
+    const parentDirectoryPath = path.dirname(options.output);
+    await fs.mkdir(parentDirectoryPath, { recursive: true });
+    await fs.writeFile(options.output, outputBuffer);  // Throws
+    if(!options.quiet) {
+      console.log(`Input File Encoding : [${inputEncoding}] ... Input File New Line : [${inputNewLine}] ... [${options.input}]`);
+      console.log(`Output File Encoding : [${outputEncoding}${isSameEncoding ? ' (Same)' : ''}] ... Output File New Line : [${outputNewLine}${isSameNewLine ? ' (Same)' : ''}] ... [${options.output}]`);
+      console.log('Converted');
+    }
   }
   catch(error) {
-    return console.error('Failed To Read File : ', error);
+    console.error(error.toString());
   }
+})();
+
+
+// Parse Options
+// ================================================================================
+
+/**
+ * ファイルの存在チェックをする
+ * 
+ * @param {string} filePath ファイルパス
+ * @return {Promise<boolean>} ファイルが存在していれば `true`・存在していなければ `false`
+ */
+async function isExistFile(filePath) {
+  return await fs.stat(filePath).then(() => true).catch(() => false);
+}
+
+/**
+ * `encoding` オプションに渡された文字列を整形する
+ * 
+ * @param {string} encoding `encoding` オプションの文字列
+ * @return {string} 整形した文字列
+ * @throws 不正な文字列を渡された場合
+ */
+function detectEncodingOption(encoding) {
+  const upperEncoding = encoding.toUpperCase();
+  if(['SJIS'   , 'SHIFT-JIS', 'SHIFT_JIS', 'SHIFTJIS'].includes(upperEncoding)) return 'SJIS'   ;
+  if(['EUCJP'  , 'EUC-JP'                            ].includes(upperEncoding)) return 'EUCJP'  ;
+  if(['UTF8'   , 'UTF-8'                             ].includes(upperEncoding)) return 'UTF8'   ;
+  if(['UTF8BOM', 'UTF-8BOM', 'UTF8 BOM', 'UTF-8 BOM' ].includes(upperEncoding)) return 'UTF8BOM';
+  throw new Error(`Invalid Option : --encoding ${encoding}`);
+}
+
+/**
+ * `newLine` オプションに渡された文字列を整形する
+ * 
+ * @param {string} newLine `newLine` オプションの文字列
+ * @return {string} 整形した文字列
+ * @throws 不正な文字列を渡された場合
+ */
+function detectNewLineOption(newLine) {
+  const upperNewLine = newLine.toUpperCase();
+  if(upperNewLine === 'LF') return 'LF';
+  if(upperNewLine === 'CR') return 'CR';
+  if(['CRLF', 'CR-LF', 'CR+LF', 'CR LF'].includes(upperNewLine)) return 'CRLF';
+  throw new Error(`Invalid Option : --new-line ${newLine}`);
+}
+
+
+// Detect
+// ================================================================================
+
+/**
+ * Input ファイルの文字コード・改行コードを判定する
+ * 
+ * @param {string} inputFilePath Input ファイルパス
+ * @return {Object} 判定結果
+ */
+async function detectInput(inputFilePath) {
+  // ファイルを読み込む
+  const inputBuffer = await fs.readFile(inputFilePath);  // Throws
   
   // 文字コードを判定する : 対応外のファイルはココで弾く
-  let inputEncoding = null;
-  try {
-    inputEncoding = detectEncoding(inputBuffer);
-  }
-  catch(error) {
-    return console.error(error);
-  }
+  const inputEncoding = detectEncoding(inputBuffer);  // Throws
   
   // 文字列に変換する
   const inputString = convertBufferToString(inputBuffer, inputEncoding);
   // 改行コードを判定する
   const inputNewLine = detectNewLine(inputString);
   
-  // 判定結果を出力する
-  console.log(`${inputFilePath} : ${inputEncoding} / ${inputNewLine}`);
-  // 変換オプションがどちらも未指定の場合は判定のみ行って終了する
-  if(isEmptyString(outputEncoding) && isEmptyString(outputNewLine)) return;
-  // 変換後の形式を確認する
-  console.log(`  --> ${outputEncoding}${inputEncoding === outputEncoding ? ' (No Convert)' : ''} / ${outputNewLine}${inputNewLine === outputNewLine ? ' (No Convert)' : ''}`);
-  // 判定結果と変換オプションが一致する場合は何もしない
-  if(inputEncoding === outputEncoding && inputNewLine === outputNewLine) return console.log('No Converts Needed');
-  // 変換後のファイルパスを出力しておく
-  console.log(`  --> ${outputFilePath}`);
-  
-  // 改行コード置換が必要な場合のみ置換を行う
-  const outputString = inputNewLine === outputNewLine ? inputString : replaceNewLine(inputString, outputNewLine);
-  // 文字コードを指定してバッファデータに変換する
-  const outputBuffer = convertStringToBuffer(outputString, outputEncoding);
-  
-  // ファイルに書き出す
-  await fs.writeFile(outputFilePath, outputBuffer);
-  
-  console.log('Finished');
-})();
-
-/**
- * undefined・null・空文字のいずれかかどうかを判定する
- * 
- * @param {string | undefined | null} string 文字列
- * @return {boolean} undefined・null・空文字なら true、それ以外は false
- */
-function isEmptyString(string) {
-  return string == null || string === '';
+  return { inputEncoding, inputNewLine, inputString };
 }
 
 /**
@@ -132,13 +191,50 @@ function detectNewLine(string) {
   return 'MIX';  // 複数の改行コードが混在している場合
 }
 
+
+// Convert
+// ================================================================================
+
+/**
+ * 変換要否を判定する
+ * 
+ * @param {string} inputEncoding Input ファイルの文字コード
+ * @param {string} inputNewLine Input ファイルの改行コード
+ * @param {string} outputEncoding 変換したい文字コード
+ * @param {string} outputNewLine 変換したい改行コード
+ * @return {Object} 変換要否の判定結果オブジェクト
+ */
+function detectNeedToConvert(inputEncoding, inputNewLine, outputEncoding, outputNewLine) {
+  const isSameEncoding = inputEncoding === outputEncoding;  // いずれも SJIS・EUCJP・UTF8・UTF8BOM の4つに集約されている
+  const isSameNewLine  = inputNewLine === 'NOLINES' ? true  // Input に改行がなければ変換後も同じ
+                       : inputNewLine === outputNewLine;    // それ以外は LF・CR・CRLF 同士なら一致する、Input が LFCR や MIX なら必ず不一致となる
+  const isNotNeedToConvert = isSameEncoding && isSameNewLine;
+  return { isNotNeedToConvert, isSameEncoding, isSameNewLine };
+}
+
+/**
+ * 文字列の改行コード・文字コードを変換後、バッファデータに変換する
+ * 
+ * @param {string} inputString Input 文字列
+ * @param {boolean} isSameNewLine 改行コードが同じかどうか
+ * @param {string} outputEncoding 変換したい文字コード
+ * @param {string} outputNewLine 変換したい改行コード
+ * @return {Buffer} バッファデータ
+ */
+function convertOutput(inputString, isSameNewLine, outputEncoding, outputNewLine) {
+  // 改行コード置換が必要な場合のみ置換を行う
+  const outputString = isSameNewLine ? inputString : replaceNewLine(inputString, outputNewLine);
+  // 文字コードを指定してバッファデータに変換する
+  const outputBuffer = convertStringToBuffer(outputString, outputEncoding);
+  return outputBuffer;
+}
+
 /**
  * 文字列中の改行コードを指定の改行コードに置換する
  * 
  * @param {string} string 文字列
  * @param {string} newLine 置換する改行コード ('LF'・'CR'・'CRLF')
  * @return {string} 改行コード置換後の文字列
- * @throws 想定外の改行コードを引数で指定された場合
  */
 function replaceNewLine(string, newLine) {
   const newLineCharacters = {
@@ -147,7 +243,6 @@ function replaceNewLine(string, newLine) {
     'CRLF': '\r\n'
   };
   const newLineCharacter = newLineCharacters[newLine];
-  if(newLineCharacter == null) throw new Error('Invalid New Line Argument');
   return string.replace((/\r\n|\n\r|\r|\n/g), newLineCharacter);
 }
 

@@ -3,9 +3,12 @@
   "version": "0.0.0",
   "description": "Convert Encoding New Line",
   "main": "index.js",
+  "bin": {
+    "convert-encoding-newline": "index.js"
+  },
   "scripts": {
     "start": "node ./index.js",
-    "test" : "node ./test.js"
+    "test" : "node ./tests/index.js"
   },
   "author": "Neo <neos21@gmail.com> (https://neos21.net/)",
   "license": "MIT",
@@ -22,6 +25,7 @@
     "url": "https://github.com/sponsors/Neos21"
   },
   "dependencies": {
+    "commander": "9.4.0",
     "encoding-japanese": "2.0.0"
   }
 }
