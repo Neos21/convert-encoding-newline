@@ -1,6 +1,6 @@
 {
   "name": "@neos21/convert-encoding-newline",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Convert Encoding New Line",
   "main": "index.js",
   "bin": {
