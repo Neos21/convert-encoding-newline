@@ -1,6 +1,6 @@
 # @neos21/convert-encoding-newline : Convert Encoding New Line
 
-[![NPM Version](https://img.shields.io/npm/v/@neos21/convert-encoding-newline.svg)](https://www.npmjs.com/package/@neos21/convert-encoding-newline)
+[![NPM Version](https://img.shields.io/npm/v/@neos21/convert-encoding-newline.svg)](https://www.npmjs.com/package/@neos21/convert-encoding-newline) [![GPR Version](https://img.shields.io/github/package-json/v/neos21/convert-encoding-newline?label=github)](https://github.com/Neos21/convert-encoding-newline/packages/1560217)
 
 テキストファイルの文字コード・改行コードを判定・変換する CLI ツール。
 
